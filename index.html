@@ -5,10 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Gallery</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
         body {
             margin: 0;
+            padding: 0;
             overflow: hidden;
             font-family: Arial, sans-serif;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
         }
         #info {
             position: absolute;
@@ -19,6 +32,10 @@
             padding: 15px;
             border-radius: 8px;
             z-index: 100;
+            display: none;
+        }
+        #info.visible {
+            display: block;
         }
         #controls {
             position: absolute;
@@ -30,31 +47,22 @@
             padding: 10px 20px;
             border-radius: 8px;
             text-align: center;
-        }
-        #videoModal {
             display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0,0,0,0.9);
-            padding: 20px;
-            border-radius: 10px;
-            z-index: 200;
         }
-        #videoModal video {
-            max-width: 80vw;
-            max-height: 60vh;
+        #controls.visible {
+            display: block;
         }
         #closeVideo {
             position: absolute;
-            top: 10px;
-            right: 10px;
+            top: 20px;
+            right: 20px;
             background: white;
             border: none;
-            padding: 5px 10px;
+            padding: 10px 15px;
             cursor: pointer;
             border-radius: 5px;
+            font-size: 18px;
+            z-index: 10000;
         }
         #fullscreenPrompt {
             position: fixed;
@@ -183,7 +191,7 @@
         <button id="enterButton">Enter Gallery</button>
     </div>
 
-    <button id="fullscreenToggle">⛶ Exit Fullscreen</button>
+    <button id="fullscreenToggle" style="display: none;">⛶ Exit Fullscreen</button>
     
     <div id="info">
         <strong>3D Gallery</strong><br>
@@ -231,11 +239,20 @@
         document.getElementById('enterButton').addEventListener('click', () => {
             enterFullscreen();
             document.getElementById('fullscreenPrompt').classList.add('hidden');
+            // Show info and controls after entering
+            document.getElementById('info').classList.add('visible');
+            document.getElementById('controls').classList.add('visible');
+            // Reset camera position and rotation when entering
+            resetCameraPosition();
         });
+
+        function resetCameraPosition() {
+            camera.position.set(0, 2.2, 8);
+            camera.rotation.set(-0.3, 0, 0); // Reset to looking down position
+        }
 
         // Fullscreen toggle button
         const toggleBtn = document.getElementById('fullscreenToggle');
-        toggleBtn.style.display = 'none'; // Hidden initially
         
         toggleBtn.addEventListener('click', toggleFullscreen);
 
@@ -308,9 +325,11 @@
             scene.background = new THREE.Color(0x1a1a1a);
             scene.fog = new THREE.Fog(0x1a1a1a, 1, 50);
 
-            // Camera
+            // Camera - always start at the beginning (raised 2 feet, looking down)
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 1.6, 8);
+            camera.position.set(0, 2.2, 8);
+            camera.rotation.order = 'YXZ'; // Set rotation order to prevent roll
+            camera.rotation.set(-0.3, 0, 0); // Start tilted down (~17 degrees)
 
             // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -448,8 +467,11 @@
             window.addEventListener('resize', onWindowResize);
 
             document.getElementById('closeVideo').addEventListener('click', () => {
-                document.getElementById('videoModal').style.display = 'none';
-                document.getElementById('galleryVideo').pause();
+                const modal = document.getElementById('videoModal');
+                const video = document.getElementById('galleryVideo');
+                modal.classList.remove('active');
+                video.pause();
+                video.src = '';
             });
 
             document.addEventListener('click', () => {
@@ -501,7 +523,27 @@
             if (intersects.length > 0) {
                 const obj = intersects[0].object;
                 if (obj.userData.isVideo) {
-                    document.getElementById('videoModal').style.display = 'block';
+                    // Create video modal dynamically with inline styles
+                    let modal = document.getElementById('videoModal');
+                    if (!modal) {
+                        modal = document.createElement('div');
+                        modal.id = 'videoModal';
+                        modal.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(0,0,0,0.95);z-index:9999;justify-content:center;align-items:center;';
+                        modal.innerHTML = `
+                            <button id="closeVideo" style="position:absolute;top:20px;right:20px;background:white;border:none;padding:10px 15px;cursor:pointer;border-radius:5px;font-size:18px;z-index:10000;">✕</button>
+                            <video id="galleryVideo" controls style="max-width:80vw;max-height:60vh;"></video>
+                        `;
+                        document.body.appendChild(modal);
+                        
+                        document.getElementById('closeVideo').addEventListener('click', () => {
+                            const m = document.getElementById('videoModal');
+                            const v = document.getElementById('galleryVideo');
+                            v.pause();
+                            v.src = '';
+                            m.remove();
+                        });
+                    }
+                    
                     const video = document.getElementById('galleryVideo');
                     video.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
                     video.play();
@@ -516,13 +558,20 @@
             const normalizedX = (event.clientX / window.innerWidth) * 2 - 1;
             const normalizedY = (event.clientY / window.innerHeight) * 2 - 1;
             
-            // Pan (horizontal rotation) based on X position
-            // Map from -1,1 to -PI,PI for full 360 degree range
+            // Pan (horizontal rotation) based on X position - Y axis only
             camera.rotation.y = -normalizedX * Math.PI;
             
-            // Tilt (vertical rotation) based on Y position
-            // Map from -1,1 to -PI/2,PI/2 for 180 degree range (looking up/down)
-            camera.rotation.x = normalizedY * Math.PI / 2;
+            // Tilt (vertical rotation) - centered around -20° (looking down) - X axis only
+            const centerTilt = -20 * Math.PI / 180;
+            
+            if (normalizedY < 0) {
+                camera.rotation.x = centerTilt + (normalizedY * (20 * Math.PI / 180));
+            } else {
+                camera.rotation.x = centerTilt + (normalizedY * (20 * Math.PI / 180));
+            }
+            
+            // Lock Z rotation to prevent roll
+            camera.rotation.z = 0;
             
             mouse.x = normalizedX;
             mouse.y = -normalizedY;
@@ -621,7 +670,8 @@
                         
                         camera.rotation.y -= deltaX * 0.005;
                         camera.rotation.x -= deltaY * 0.005;
-                        camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+                        // Updated: No upward tilt (0°), Look down -40°
+                        camera.rotation.x = Math.max(-40 * Math.PI / 180, Math.min(0, camera.rotation.x));
                         
                         lookStartX = touch.clientX;
                         lookStartY = touch.clientY;
@@ -665,8 +715,8 @@
                 camera.position.z -= Math.sin(yaw) * speed;
             }
 
-            // Keep camera at ground level (eye height)
-            camera.position.y = 1.6;
+            // Keep camera at raised eye height (2 feet higher = 2.2 units)
+            camera.position.y = 2.2;
 
             // Boundaries
             camera.position.x = Math.max(-9, Math.min(9, camera.position.x));
