@@ -56,6 +56,38 @@
             cursor: pointer;
             border-radius: 5px;
         }
+        #fullscreenPrompt {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            flex-direction: column;
+            color: white;
+            text-align: center;
+            padding: 20px;
+        }
+        #fullscreenPrompt.hidden {
+            display: none;
+        }
+        #enterButton {
+            background: white;
+            color: black;
+            border: none;
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #enterButton:hover {
+            background: #f0f0f0;
+        }
         #mobileControls {
             display: none;
             position: fixed;
@@ -120,6 +152,12 @@
     </style>
 </head>
 <body>
+    <div id="fullscreenPrompt">
+        <h1>3D Gallery Experience</h1>
+        <p>Tap below to enter fullscreen mode</p>
+        <button id="enterButton">Enter Gallery</button>
+    </div>
+    
     <div id="info">
         <strong>3D Gallery</strong><br>
         Click to explore
@@ -158,6 +196,23 @@
 
         init();
         animate();
+        
+        // Fullscreen prompt handler
+        document.getElementById('enterButton').addEventListener('click', () => {
+            enterFullscreen();
+            document.getElementById('fullscreenPrompt').classList.add('hidden');
+        });
+
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) { // Safari
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { // IE11
+                elem.msRequestFullscreen();
+            }
+        }
 
         function init() {
             // Scene setup
