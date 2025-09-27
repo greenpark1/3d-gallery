@@ -56,6 +56,67 @@
             cursor: pointer;
             border-radius: 5px;
         }
+        #mobileControls {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            pointer-events: none;
+            z-index: 150;
+        }
+        .joystick {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            bottom: 40px;
+            pointer-events: all;
+        }
+        #leftJoystick {
+            left: 40px;
+        }
+        .joystick-base {
+            width: 100%;
+            height: 100%;
+            background: rgba(255,255,255,0.2);
+            border: 3px solid rgba(255,255,255,0.4);
+            border-radius: 50%;
+            position: relative;
+        }
+        .joystick-stick {
+            width: 50px;
+            height: 50px;
+            background: rgba(255,255,255,0.6);
+            border: 2px solid rgba(255,255,255,0.8);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s;
+        }
+        #lookArea {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 50%;
+            height: 100%;
+            pointer-events: all;
+            z-index: 140;
+        }
+        @media (max-width: 768px) {
+            #mobileControls {
+                display: block;
+            }
+            #controls {
+                display: none;
+            }
+            #info {
+                font-size: 12px;
+                padding: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -64,9 +125,16 @@
         Click to explore
     </div>
     <div id="controls">
-        Q/W/E/D/C/X/Z/A: Move (N/NE/E/SE/S/SW/W/NW) | Cursor Position: Look Around | Click: Interact
+        W/S: Forward/Backward | A/D: Strafe Left/Right | Cursor Position: Look Around | Click: Interact
     </div>
     <div id="videoModal">
+        <div id="leftJoystick" class="joystick">
+            <div class="joystick-base">
+                <div class="joystick-stick" id="moveStick"></div>
+            </div>
+        </div>
+        <div id="lookArea"></div>
+    </div>
         <button id="closeVideo">✕</button>
         <video id="galleryVideo" controls></video>
     </div>
@@ -74,13 +142,19 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
         let scene, camera, renderer, controls;
-        let moveN = false, moveNE = false, moveE = false, moveSE = false;
-        let moveS = false, moveSW = false, moveW = false, moveNW = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let velocity = new THREE.Vector3();
         let direction = new THREE.Vector3();
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         let clickableObjects = [];
+        
+        // Mobile controls
+        let joystickActive = false;
+        let joystickStartX = 0, joystickStartY = 0;
+        let joystickDeltaX = 0, joystickDeltaY = 0;
+        let lookTouchId = null;
+        let lookStartX = 0, lookStartY = 0;
 
         init();
         animate();
@@ -238,6 +312,9 @@
             document.addEventListener('click', () => {
                 // Pointer lock removed - using cursor position instead
             });
+
+            // Mobile touch controls
+            setupMobileControls();
         }
 
         function createArtwork(x, y, z, id, color, title, isVideo = false) {
@@ -310,27 +387,19 @@
 
         function onKeyDown(event) {
             switch(event.code) {
-                case 'KeyW': moveN = true; break;
-                case 'KeyE': moveNE = true; break;
-                case 'KeyD': moveE = true; break;
-                case 'KeyC': moveSE = true; break;
-                case 'KeyX': moveS = true; break;
-                case 'KeyZ': moveSW = true; break;
-                case 'KeyA': moveW = true; break;
-                case 'KeyQ': moveNW = true; break;
+                case 'KeyW': moveForward = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyD': moveRight = true; break;
             }
         }
 
         function onKeyUp(event) {
             switch(event.code) {
-                case 'KeyW': moveN = false; break;
-                case 'KeyE': moveNE = false; break;
-                case 'KeyD': moveE = false; break;
-                case 'KeyC': moveSE = false; break;
-                case 'KeyX': moveS = false; break;
-                case 'KeyZ': moveSW = false; break;
-                case 'KeyA': moveW = false; break;
-                case 'KeyQ': moveNW = false; break;
+                case 'KeyW': moveForward = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyD': moveRight = false; break;
             }
         }
 
@@ -340,34 +409,117 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        function setupMobileControls() {
+            const moveJoystick = document.getElementById('leftJoystick');
+            const moveStick = document.getElementById('moveStick');
+            const lookArea = document.getElementById('lookArea');
+
+            // Movement joystick
+            moveJoystick.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                const rect = moveJoystick.getBoundingClientRect();
+                joystickStartX = rect.left + rect.width / 2;
+                joystickStartY = rect.top + rect.height / 2;
+                joystickActive = true;
+            });
+
+            moveJoystick.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                if (!joystickActive) return;
+                
+                const touch = e.touches[0];
+                joystickDeltaX = touch.clientX - joystickStartX;
+                joystickDeltaY = touch.clientY - joystickStartY;
+                
+                // Limit joystick range
+                const distance = Math.sqrt(joystickDeltaX ** 2 + joystickDeltaY ** 2);
+                const maxDistance = 35;
+                if (distance > maxDistance) {
+                    joystickDeltaX = (joystickDeltaX / distance) * maxDistance;
+                    joystickDeltaY = (joystickDeltaY / distance) * maxDistance;
+                }
+                
+                // Update stick position
+                moveStick.style.transform = `translate(calc(-50% + ${joystickDeltaX}px), calc(-50% + ${joystickDeltaY}px))`;
+                
+                // Set movement flags
+                moveForward = joystickDeltaY < -10;
+                moveBackward = joystickDeltaY > 10;
+                moveLeft = joystickDeltaX < -10;
+                moveRight = joystickDeltaX > 10;
+            });
+
+            moveJoystick.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                joystickActive = false;
+                joystickDeltaX = 0;
+                joystickDeltaY = 0;
+                moveStick.style.transform = 'translate(-50%, -50%)';
+                moveForward = moveBackward = moveLeft = moveRight = false;
+            });
+
+            // Look controls (right side of screen)
+            lookArea.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const touch = e.touches[0];
+                lookTouchId = touch.identifier;
+                lookStartX = touch.clientX;
+                lookStartY = touch.clientY;
+            });
+
+            lookArea.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                for (let i = 0; i < e.touches.length; i++) {
+                    if (e.touches[i].identifier === lookTouchId) {
+                        const touch = e.touches[i];
+                        const deltaX = touch.clientX - lookStartX;
+                        const deltaY = touch.clientY - lookStartY;
+                        
+                        camera.rotation.y -= deltaX * 0.005;
+                        camera.rotation.x -= deltaY * 0.005;
+                        camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+                        
+                        lookStartX = touch.clientX;
+                        lookStartY = touch.clientY;
+                        break;
+                    }
+                }
+            });
+
+            lookArea.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                lookTouchId = null;
+            });
+        }
+
         function animate() {
             requestAnimationFrame(animate);
 
-            velocity.set(0, 0, 0);
-
-            // 8-directional movement relative to camera direction
-            if (moveN) { velocity.z -= 1; } // North (forward)
-            if (moveS) { velocity.z += 1; } // South (backward)
-            if (moveE) { velocity.x += 1; } // East (right)
-            if (moveW) { velocity.x -= 1; } // West (left)
-            if (moveNE) { velocity.z -= 0.707; velocity.x += 0.707; } // Northeast
-            if (moveSE) { velocity.z += 0.707; velocity.x += 0.707; } // Southeast
-            if (moveSW) { velocity.z += 0.707; velocity.x -= 0.707; } // Southwest
-            if (moveNW) { velocity.z -= 0.707; velocity.x -= 0.707; } // Northwest
-
-            // Apply movement relative to camera's horizontal rotation only
-            if (velocity.length() > 0) {
-                velocity.normalize().multiplyScalar(0.1);
-                
-                // Get camera's Y rotation (horizontal panning) for direction
-                const cameraYRotation = camera.rotation.y;
-                
-                // Calculate movement in world space based on camera direction
-                const moveX = velocity.x * Math.cos(cameraYRotation) - velocity.z * Math.sin(cameraYRotation);
-                const moveZ = velocity.x * Math.sin(cameraYRotation) + velocity.z * Math.cos(cameraYRotation);
-                
-                camera.position.x += moveX;
-                camera.position.z += moveZ;
+            // DOOM-style movement: always on ground plane, ignores vertical look
+            const speed = 0.15;
+            
+            // Get camera's horizontal rotation only (Y-axis)
+            const yaw = camera.rotation.y;
+            
+            // Forward/Backward movement
+            if (moveForward) {
+                camera.position.x -= Math.sin(yaw) * speed;
+                camera.position.z -= Math.cos(yaw) * speed;
+            }
+            if (moveBackward) {
+                camera.position.x += Math.sin(yaw) * speed;
+                camera.position.z += Math.cos(yaw) * speed;
+            }
+            
+            // Strafe Left/Right movement (perpendicular to facing direction)
+            if (moveLeft) {
+                camera.position.x -= Math.cos(yaw) * speed;
+                camera.position.z += Math.sin(yaw) * speed;
+            }
+            if (moveRight) {
+                camera.position.x += Math.cos(yaw) * speed;
+                camera.position.z -= Math.sin(yaw) * speed;
             }
 
             // Keep camera at ground level (eye height)
