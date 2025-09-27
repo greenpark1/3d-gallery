@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Gallery</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 100;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        #videoModal {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 200;
+        }
+        #videoModal video {
+            max-width: 80vw;
+            max-height: 60vh;
+        }
+        #closeVideo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            border: none;
+            padding: 5px 10px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>3D Gallery</strong><br>
+        Click to explore
+    </div>
+    <div id="controls">
+        Q/W/E/D/C/X/Z/A: Move (N/NE/E/SE/S/SW/W/NW) | Cursor Position: Look Around | Click: Interact
+    </div>
+    <div id="videoModal">
+        <button id="closeVideo">✕</button>
+        <video id="galleryVideo" controls></video>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, controls;
+        let moveN = false, moveNE = false, moveE = false, moveSE = false;
+        let moveS = false, moveSW = false, moveW = false, moveNW = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let clickableObjects = [];
+
+        init();
+        animate();
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+            scene.fog = new THREE.Fog(0x1a1a1a, 1, 50);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 8);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const spotLight1 = new THREE.SpotLight(0xffffff, 1.0);
+            spotLight1.position.set(0, 8, 0);
+            spotLight1.castShadow = true;
+            scene.add(spotLight1);
+
+            const spotLight2 = new THREE.SpotLight(0xffffff, 1.0);
+            spotLight2.position.set(0, 8, -15);
+            scene.add(spotLight2);
+
+            const spotLight3 = new THREE.SpotLight(0xffffff, 0.8);
+            spotLight3.position.set(0, 8, -25);
+            scene.add(spotLight3);
+
+            // Corridor floor
+            const corridorFloor = new THREE.Mesh(
+                new THREE.PlaneGeometry(6, 20),
+                new THREE.MeshStandardMaterial({ color: 0x333333 })
+            );
+            corridorFloor.rotation.x = -Math.PI / 2;
+            corridorFloor.receiveShadow = true;
+            scene.add(corridorFloor);
+
+            // Main room floor
+            const roomFloor = new THREE.Mesh(
+                new THREE.PlaneGeometry(20, 20),
+                new THREE.MeshStandardMaterial({ color: 0x444444 })
+            );
+            roomFloor.rotation.x = -Math.PI / 2;
+            roomFloor.position.z = -20;
+            roomFloor.receiveShadow = true;
+            scene.add(roomFloor);
+
+            // Corridor walls
+            const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4, 20), wallMaterial);
+            leftWall.position.set(-3, 2, 0);
+            scene.add(leftWall);
+
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.2, 4, 20), wallMaterial);
+            rightWall.position.set(3, 2, 0);
+            scene.add(rightWall);
+
+            // Corridor objects - plant
+            const plant = new THREE.Group();
+            const pot = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.3, 0.4, 0.6, 8),
+                new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+            );
+            const leaves = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 8, 8),
+                new THREE.MeshStandardMaterial({ color: 0x228B22 })
+            );
+            leaves.position.y = 0.6;
+            plant.add(pot, leaves);
+            plant.position.set(-2, 0.3, 3);
+            scene.add(plant);
+
+            // Corridor bench
+            const bench = new THREE.Group();
+            const seat = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 0.1, 0.5),
+                new THREE.MeshStandardMaterial({ color: 0x8B7355 })
+            );
+            const leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.1), wallMaterial);
+            leg1.position.set(-0.6, -0.3, -0.15);
+            const leg2 = leg1.clone();
+            leg2.position.set(0.6, -0.3, -0.15);
+            bench.add(seat, leg1, leg2);
+            bench.position.set(2, 0.5, 2);
+            scene.add(bench);
+
+            // Main room walls
+            const roomWallMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+            
+            // Back wall
+            const backWall = new THREE.Mesh(
+                new THREE.BoxGeometry(20, 6, 0.2),
+                roomWallMaterial
+            );
+            backWall.position.set(0, 3, -30);
+            scene.add(backWall);
+
+            // Left room wall
+            const leftRoomWall = new THREE.Mesh(
+                new THREE.BoxGeometry(0.2, 6, 20),
+                roomWallMaterial
+            );
+            leftRoomWall.position.set(-10, 3, -20);
+            scene.add(leftRoomWall);
+
+            // Right room wall
+            const rightRoomWall = new THREE.Mesh(
+                new THREE.BoxGeometry(0.2, 6, 20),
+                roomWallMaterial
+            );
+            rightRoomWall.position.set(10, 3, -20);
+            scene.add(rightRoomWall);
+
+            // Center seat
+            const centerSeat = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 0.5, 2),
+                new THREE.MeshStandardMaterial({ color: 0x8B0000 })
+            );
+            centerSeat.position.set(0, 0.25, -20);
+            scene.add(centerSeat);
+
+            // Wall artworks
+            createArtwork(-9, 2.5, -20, 'painting1', 0xff6b6b, 'Abstract Art');
+            createArtwork(-9, 2.5, -25, 'painting2', 0x4ecdc4, 'Landscape');
+            
+            createArtwork(9, 2.5, -20, 'painting3', 0xffe66d, 'Portrait');
+            createArtwork(9, 2.5, -15, 'painting4', 0xa8e6cf, 'Modern Art');
+            createArtwork(9, 2.5, -25, 'painting5', 0xff8b94, 'Still Life');
+
+            createArtwork(-5, 2.5, -29.8, 'video1', 0x6c5ce7, 'Video Art 1', true);
+            createArtwork(0, 2.5, -29.8, 'video2', 0xfd79a8, 'Video Art 2', true);
+            createArtwork(5, 2.5, -29.8, 'painting6', 0xfdcb6e, 'Gallery Art');
+
+            // Mouse and keyboard controls
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('click', onClick);
+            document.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('resize', onWindowResize);
+
+            document.getElementById('closeVideo').addEventListener('click', () => {
+                document.getElementById('videoModal').style.display = 'none';
+                document.getElementById('galleryVideo').pause();
+            });
+
+            document.addEventListener('click', () => {
+                // Pointer lock removed - using cursor position instead
+            });
+        }
+
+        function createArtwork(x, y, z, id, color, title, isVideo = false) {
+            const frame = new THREE.Mesh(
+                new THREE.BoxGeometry(2, 1.5, 0.1),
+                new THREE.MeshStandardMaterial({ color: color })
+            );
+            frame.position.set(x, y, z);
+            
+            if (Math.abs(z + 29.8) < 0.1) frame.rotation.y = 0;
+            else if (x < 0) frame.rotation.y = Math.PI / 2;
+            else frame.rotation.y = -Math.PI / 2;
+            
+            frame.userData = { id, title, isVideo };
+            clickableObjects.push(frame);
+            scene.add(frame);
+
+            // Add label
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = 256;
+            canvas.height = 64;
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(title, 10, 35);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const label = new THREE.Mesh(
+                new THREE.PlaneGeometry(1, 0.25),
+                new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+            );
+            label.position.set(x, y - 1, z + (Math.abs(z + 29.8) < 0.1 ? 0.1 : (x < 0 ? -0.1 : 0.1)));
+            label.rotation.copy(frame.rotation);
+            scene.add(label);
+        }
+
+        function onClick(event) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(clickableObjects);
+            
+            if (intersects.length > 0) {
+                const obj = intersects[0].object;
+                if (obj.userData.isVideo) {
+                    document.getElementById('videoModal').style.display = 'block';
+                    const video = document.getElementById('galleryVideo');
+                    video.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                    video.play();
+                } else {
+                    alert(`Viewing: ${obj.userData.title}`);
+                }
+            }
+        }
+
+        function onMouseMove(event) {
+            // Normalize cursor position to -1 to 1 range
+            const normalizedX = (event.clientX / window.innerWidth) * 2 - 1;
+            const normalizedY = (event.clientY / window.innerHeight) * 2 - 1;
+            
+            // Pan (horizontal rotation) based on X position
+            // Map from -1,1 to -PI,PI for full 360 degree range
+            camera.rotation.y = -normalizedX * Math.PI;
+            
+            // Tilt (vertical rotation) based on Y position
+            // Map from -1,1 to -PI/2,PI/2 for 180 degree range (looking up/down)
+            camera.rotation.x = normalizedY * Math.PI / 2;
+            
+            mouse.x = normalizedX;
+            mouse.y = -normalizedY;
+        }
+
+        function onKeyDown(event) {
+            switch(event.code) {
+                case 'KeyW': moveN = true; break;
+                case 'KeyE': moveNE = true; break;
+                case 'KeyD': moveE = true; break;
+                case 'KeyC': moveSE = true; break;
+                case 'KeyX': moveS = true; break;
+                case 'KeyZ': moveSW = true; break;
+                case 'KeyA': moveW = true; break;
+                case 'KeyQ': moveNW = true; break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch(event.code) {
+                case 'KeyW': moveN = false; break;
+                case 'KeyE': moveNE = false; break;
+                case 'KeyD': moveE = false; break;
+                case 'KeyC': moveSE = false; break;
+                case 'KeyX': moveS = false; break;
+                case 'KeyZ': moveSW = false; break;
+                case 'KeyA': moveW = false; break;
+                case 'KeyQ': moveNW = false; break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            velocity.set(0, 0, 0);
+
+            // 8-directional movement relative to camera direction
+            if (moveN) { velocity.z -= 1; } // North (forward)
+            if (moveS) { velocity.z += 1; } // South (backward)
+            if (moveE) { velocity.x += 1; } // East (right)
+            if (moveW) { velocity.x -= 1; } // West (left)
+            if (moveNE) { velocity.z -= 0.707; velocity.x += 0.707; } // Northeast
+            if (moveSE) { velocity.z += 0.707; velocity.x += 0.707; } // Southeast
+            if (moveSW) { velocity.z += 0.707; velocity.x -= 0.707; } // Southwest
+            if (moveNW) { velocity.z -= 0.707; velocity.x -= 0.707; } // Northwest
+
+            // Apply movement relative to camera's horizontal rotation only
+            if (velocity.length() > 0) {
+                velocity.normalize().multiplyScalar(0.1);
+                
+                // Get camera's Y rotation (horizontal panning) for direction
+                const cameraYRotation = camera.rotation.y;
+                
+                // Calculate movement in world space based on camera direction
+                const moveX = velocity.x * Math.cos(cameraYRotation) - velocity.z * Math.sin(cameraYRotation);
+                const moveZ = velocity.x * Math.sin(cameraYRotation) + velocity.z * Math.cos(cameraYRotation);
+                
+                camera.position.x += moveX;
+                camera.position.z += moveZ;
+            }
+
+            // Keep camera at ground level (eye height)
+            camera.position.y = 1.6;
+
+            // Boundaries
+            camera.position.x = Math.max(-9, Math.min(9, camera.position.x));
+            camera.position.z = Math.max(-29, Math.min(9, camera.position.z));
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
