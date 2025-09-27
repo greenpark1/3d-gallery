@@ -32,10 +32,7 @@
             padding: 15px;
             border-radius: 8px;
             z-index: 100;
-            display: none;
-        }
-        #info.visible {
-            display: block;
+            display: none !important;
         }
         #controls {
             position: absolute;
@@ -47,10 +44,7 @@
             padding: 10px 20px;
             border-radius: 8px;
             text-align: center;
-            display: none;
-        }
-        #controls.visible {
-            display: block;
+            display: none !important;
         }
         #closeVideo {
             position: absolute;
@@ -127,7 +121,9 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 200px;
+            top: 0;
+            height: 100vh;
+            width: 100vw;
             pointer-events: none;
             z-index: 150;
         }
@@ -140,6 +136,9 @@
         }
         #leftJoystick {
             left: 40px;
+        }
+        #rightJoystick {
+            right: 40px;
         }
         .joystick-base {
             width: 100%;
@@ -167,25 +166,28 @@
             right: 0;
             width: 50%;
             height: 100%;
-            pointer-events: all;
+            pointer-events: none;
             z-index: 140;
         }
         @media (max-width: 768px) {
             #mobileControls {
                 display: block;
             }
-            #controls {
-                display: none;
-            }
             #info {
-                font-size: 12px;
-                padding: 10px;
+                display: none !important;
             }
+            #controls {
+                display: none !important;
+            }
+        }
+        /* Force hide any video elements */
+        video {
+            display: none !important;
         }
     </style>
 </head>
 <body>
-    <div id="fullscreenPrompt">
+    <div id="fullscreenPrompt" style="display: none;">
         <h1>3D Gallery Experience</h1>
         <p>Tap below to enter fullscreen mode</p>
         <button id="enterButton">Enter Gallery</button>
@@ -193,11 +195,11 @@
 
     <button id="fullscreenToggle" style="display: none;">⛶ Exit Fullscreen</button>
     
-    <div id="info">
+    <div id="info" style="display: none;">
         <strong>3D Gallery</strong><br>
         Click to explore
     </div>
-    <div id="controls">
+    <div id="controls" style="display: none;">
         W/S: Forward/Backward | A/D: Strafe Left/Right | Cursor Position: Look Around | Click: Interact
     </div>
     <div id="videoModal">
@@ -226,8 +228,8 @@
         let joystickActive = false;
         let joystickStartX = 0, joystickStartY = 0;
         let joystickDeltaX = 0, joystickDeltaY = 0;
-        let lookTouchId = null;
-        let lookStartX = 0, lookStartY = 0;
+        let lookJoystickActive = false;
+        let lookJoystickStartX = 0, lookJoystickStartY = 0;
         let isFullscreen = false;
         let doubleTapTimeout = null;
         let lastTapTime = 0;
@@ -235,14 +237,18 @@
         init();
         animate();
         
-        // Fullscreen prompt handler
+        // Auto-enter fullscreen on mobile
+        if(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            // Auto fullscreen on mobile
+            setTimeout(() => {
+                enterFullscreen();
+            }, 100);
+        }
+        
+        // Fullscreen prompt handler (desktop only)
         document.getElementById('enterButton').addEventListener('click', () => {
             enterFullscreen();
-            document.getElementById('fullscreenPrompt').classList.add('hidden');
-            // Show info and controls after entering
-            document.getElementById('info').classList.add('visible');
-            document.getElementById('controls').classList.add('visible');
-            // Reset camera position and rotation when entering
+            document.getElementById('fullscreenPrompt').style.display = 'none';
             resetCameraPosition();
         });
 
